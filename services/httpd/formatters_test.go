@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/influxdata/influxdb/influxql"
 	"github.com/influxdata/influxdb/query"
 	"github.com/influxdata/influxdb/services/httpd"
 )
@@ -27,7 +28,10 @@ func TestResponseWriter_CSV(t *testing.T) {
 		results <- result.Init()
 		defer result.Close()
 
-		result = result.WithColumns("time", "value")
+		result = result.WithColumns(
+			query.Column{Name: "time", Type: influxql.Time},
+			query.Column{Name: "value", Type: influxql.Float},
+		)
 		series, _ := result.CreateSeriesWithTags("cpu", query.NewTags(map[string]string{
 			"host":   "server01",
 			"region": "uswest",
@@ -48,7 +52,7 @@ func TestResponseWriter_CSV(t *testing.T) {
 
 	config := httpd.NewConfig()
 	enc := httpd.NewEncoder(r, &config)
-	enc.Encode(w, results)
+	enc.Encode(w, httpd.ResponseHeader{}, results)
 
 	if got, want := w.Body.String(), `name,tags,time,value
 cpu,"host=server01,region=uswest",10,2.5
