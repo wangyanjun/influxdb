@@ -235,21 +235,24 @@ func (cmd *Command) queryCursor(s *storage.Store) error {
 	LIMIT1:
 		for rs.Next() {
 			cur := rs.Cursor()
-			icur, ok := cur.(tsdb.IntegerCursor)
+			icur, ok := cur.(tsdb.IntegerBatchCursor)
 			if !ok {
 				continue
 			}
 
 			for {
-				ts, v := icur.Next()
-				if ts == tsdb.EOF {
+				ts, vs := icur.Next()
+				if len(ts) == 0 {
 					break
 				} else {
-					i++
+					i += len(ts)
 					if i > cmd.limit {
 						break LIMIT1
 					}
-					sum += v
+					for _, v := range vs {
+						sum += v
+					}
+
 				}
 			}
 		}

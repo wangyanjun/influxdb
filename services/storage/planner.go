@@ -41,9 +41,9 @@ func (r *ResultSet) Next() bool {
 }
 
 func (r *ResultSet) Cursor() tsdb.Cursor {
-	cur := newMultiShardCursor(r.row, r.asc, r.start, r.end)
+	cur := newMultiShardBatchCursor(r.row, r.asc, r.start, r.end)
 	if r.req.Aggregate != nil {
-		cur = newAggregateCursor(r.req.Aggregate, cur)
+		cur = newAggregateBatchCursor(r.req.Aggregate, cur)
 	}
 	return cur
 }

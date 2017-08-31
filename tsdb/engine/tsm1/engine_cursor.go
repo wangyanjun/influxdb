@@ -34,19 +34,20 @@ func (e *Engine) CreateCursor(r *tsdb.CursorRequest) (tsdb.Cursor, error) {
 	// Return appropriate cursor based on type.
 	switch f.Type {
 	case influxql.Float:
-		return newFloatRangeCursor(r.Series, t, r.Ascending, e.buildFloatCursor(r.Measurement, r.Series, r.Field, opt)), nil
+		return newFloatRangeBatchCursor(r.Series, t, r.Ascending, e.buildFloatBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.Integer:
-		return newIntegerRangeCursor(r.Series, t, r.Ascending, e.buildIntegerCursor(r.Measurement, r.Series, r.Field, opt)), nil
+		//return newIntegerRangeCursor(r.Series, t, r.Ascending, e.buildIntegerCursor(r.Measurement, r.Series, r.Field, opt)), nil
+		return newIntegerRangeBatchCursor(r.Series, t, r.Ascending, e.buildIntegerBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.Unsigned:
-		return nil, nil
+		return newUnsignedRangeBatchCursor(r.Series, t, r.Ascending, e.buildUnsignedBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.String:
-		return nil, nil
+		return newStringRangeBatchCursor(r.Series, t, r.Ascending, e.buildStringBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.Boolean:
-		return nil, nil
+		return newBooleanRangeBatchCursor(r.Series, t, r.Ascending, e.buildBooleanBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	default:
 		panic("unreachable")

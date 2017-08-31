@@ -39,7 +39,7 @@ func WalkNode(v NodeVisitor, node *Node) {
 
 func PredicateToExprString(p *Predicate) string {
 	if p == nil {
-		return "<none>"
+		return "[none]"
 	}
 
 	var v predicateExpressionPrinter

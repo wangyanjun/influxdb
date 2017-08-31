@@ -162,6 +162,7 @@ func (cmd *Command) query(c storage.StorageClient) error {
 	req.SeriesLimit = cmd.slimit
 	req.SeriesOffset = cmd.soffset
 	req.PointsLimit = cmd.limit
+	req.Descending = cmd.desc
 
 	if cmd.aggType != storage.AggregateTypeNone {
 		req.Aggregate = &storage.Aggregate{Type: cmd.aggType}

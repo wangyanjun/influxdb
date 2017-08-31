@@ -13,6 +13,7 @@ import (
 
 //go:generate protoc -I$GOPATH/src -I. --plugin=protoc-gen-yarpc=$GOPATH/bin/protoc-gen-yarpc --yarpc_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. --gogofaster_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. storage.proto predicate.proto
 //go:generate tmpl -data=@cursor.gen.go.tmpldata cursor.gen.go.tmpl
+//go:generate tmpl -data=@cursor.gen.go.tmpldata batch_cursor.gen.go.tmpl
 
 type rpcService struct {
 	Store *Store
@@ -30,15 +31,16 @@ func (r *rpcService) Hints(context.Context, *types.Empty) (*HintsResponse, error
 
 func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 	const BatchSize = 5000
-	const FrameCount = 10
+	const FrameCount = 50
 
 	r.Logger.Info("request",
 		zap.String("predicate", PredicateToExprString(req.Predicate)),
-		zap.Uint64("series limit", req.SeriesLimit),
-		zap.Uint64("series offset", req.SeriesOffset),
-		zap.Uint64("points limit", req.PointsLimit),
+		zap.Uint64("series_limit", req.SeriesLimit),
+		zap.Uint64("series_offset", req.SeriesOffset),
+		zap.Uint64("points_limit", req.PointsLimit),
 		zap.Int64("start", req.TimestampRange.Start),
 		zap.Int64("end", req.TimestampRange.End),
+		zap.Bool("desc", req.Descending),
 	)
 
 	rs, err := r.Store.Read(req)
@@ -91,6 +93,72 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 		res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_Series{&sf}})
 
 		switch cur := cur.(type) {
+		case tsdb.IntegerBatchCursor:
+			frame := &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
+			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
+
+			done := false
+
+			for !done {
+				ts, vs := cur.Next()
+				if len(ts) == 0 {
+					break
+				}
+
+				rem := lim - pointCount
+
+				if rem < uint64(len(ts)) {
+					ts = ts[:rem]
+					vs = vs[:rem]
+					done = true
+				}
+
+				pointCount += uint64(len(ts))
+
+				frame.Timestamps = append(frame.Timestamps, ts...)
+				frame.Values = append(frame.Values, vs...)
+
+				b++
+				if b >= BatchSize {
+					frame = &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
+					res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
+					b = 0
+				}
+			}
+
+		case tsdb.FloatBatchCursor:
+			frame := &ReadResponse_FloatPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]float64, 0, BatchSize)}
+			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_FloatPoints{frame}})
+
+			done := false
+
+			for !done {
+				ts, vs := cur.Next()
+				if len(ts) == 0 {
+					break
+				}
+
+				rem := lim - pointCount
+
+				if rem < uint64(len(ts)) {
+					ts = ts[:rem]
+					vs = vs[:rem]
+					done = true
+				}
+
+				pointCount += uint64(len(ts))
+
+				frame.Timestamps = append(frame.Timestamps, ts...)
+				frame.Values = append(frame.Values, vs...)
+
+				b++
+				if b >= BatchSize {
+					frame = &ReadResponse_FloatPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]float64, 0, BatchSize)}
+					res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_FloatPoints{frame}})
+					b = 0
+				}
+			}
+
 		case tsdb.IntegerCursor:
 			frame := &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
 			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
