@@ -1799,20 +1799,15 @@ func (e *Engine) createTagSetIterators(ref *influxql.VarRef, name string, t *que
 
 // createTagSetGroupIterators creates a set of iterators for a subset of a tagset's series.
 func (e *Engine) createTagSetGroupIterators(ref *influxql.VarRef, name string, seriesKeys []string, t *query.TagSet, filters []influxql.Expr, opt query.IteratorOptions) ([]query.Iterator, error) {
-	conditionFields := make([]influxql.VarRef, len(influxql.ExprNames(opt.Condition)))
-
 	itrs := make([]query.Iterator, 0, len(seriesKeys))
 	for i, seriesKey := range seriesKeys {
-		fields := 0
+		var conditionFields []influxql.VarRef
 		if filters[i] != nil {
 			// Retrieve non-time fields from this series filter and filter out tags.
-			for _, f := range influxql.ExprNames(filters[i]) {
-				conditionFields[fields] = f
-				fields++
-			}
+			conditionFields = influxql.ExprNames(filters[i])
 		}
 
-		itr, err := e.createVarRefSeriesIterator(ref, name, seriesKey, t, filters[i], conditionFields[:fields], opt)
+		itr, err := e.createVarRefSeriesIterator(ref, name, seriesKey, t, filters[i], conditionFields, opt)
 		if err != nil {
 			return itrs, err
 		} else if itr == nil {
@@ -2102,6 +2097,72 @@ func matchTagValues(tags models.Tags, condition influxql.Expr) []string {
 		}
 	}
 	return values
+}
+
+// IteratorCost produces the cost of an iterator.
+func (e *Engine) IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error) {
+	// Determine if this measurement exists. If it does not, then no shards are
+	// accessed to begin with.
+	if exists, err := e.index.MeasurementExists([]byte(measurement)); err != nil {
+		return query.IteratorCost{}, err
+	} else if !exists {
+		return query.IteratorCost{}, nil
+	}
+
+	// Determine all of the tag sets for this query.
+	tagSets, err := e.index.TagSets([]byte(measurement), opt)
+	if err != nil {
+		return query.IteratorCost{}, err
+	}
+
+	// Attempt to retrieve the ref from the main expression (if it exists).
+	var ref *influxql.VarRef
+	if opt.Expr != nil {
+		if v, ok := opt.Expr.(*influxql.VarRef); ok {
+			ref = v
+		} else if call, ok := opt.Expr.(*influxql.Call); ok {
+			if len(call.Args) > 0 {
+				ref, _ = call.Args[0].(*influxql.VarRef)
+			}
+		}
+	}
+
+	// Count the number of series concatenated from the tag set.
+	cost := query.IteratorCost{NumShards: 1}
+	for _, t := range tagSets {
+		cost.NumSeries += int64(len(t.SeriesKeys))
+		for i, key := range t.SeriesKeys {
+			// Retrieve the cost for the main expression (if it exists).
+			if ref != nil {
+				k := SeriesFieldKey(key, ref.Val)
+				c := e.FileStore.Cost([]byte(k), opt.StartTime, opt.EndTime)
+				cost = cost.Combine(c)
+			}
+
+			// Retrieve the cost for every auxiliary field since these are also
+			// iterators that we may have to look through.
+			// We may want to separate these though as we are unlikely to incur
+			// anywhere close to the full costs of the auxiliary iterators because
+			// many of the selected values are usually skipped.
+			for _, ref := range opt.Aux {
+				k := SeriesFieldKey(key, ref.Val)
+				c := e.FileStore.Cost([]byte(k), opt.StartTime, opt.EndTime)
+				cost = cost.Combine(c)
+			}
+
+			// Retrieve the expression names in the condition (if there is a condition).
+			// We will also create cursors for these too.
+			if t.Filters[i] != nil {
+				refs := influxql.ExprNames(t.Filters[i])
+				for _, ref := range refs {
+					k := SeriesFieldKey(key, ref.Val)
+					c := e.FileStore.Cost([]byte(k), opt.StartTime, opt.EndTime)
+					cost = cost.Combine(c)
+				}
+			}
+		}
+	}
+	return cost, nil
 }
 
 func (e *Engine) SeriesPointIterator(opt query.IteratorOptions) (query.Iterator, error) {

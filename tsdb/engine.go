@@ -45,6 +45,7 @@ type Engine interface {
 
 	CreateIterator(measurement string, opt query.IteratorOptions) (query.Iterator, error)
 	CreateCursor(r *CursorRequest) (Cursor, error)
+	IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error)
 	WritePoints(points []models.Point) error
 
 	CreateSeriesIfNotExists(key, name []byte, tags models.Tags) error

@@ -8,6 +8,7 @@ import (
 	"math"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/influxdata/influxdb/influxql"
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/pkg/estimator"
+	"github.com/influxdata/influxdb/pkg/limiter"
 	"github.com/influxdata/influxdb/query"
 	internal "github.com/influxdata/influxdb/tsdb/internal"
 	"github.com/uber-go/zap"
@@ -224,7 +226,9 @@ func (s *Shard) Statistics(tags map[string]string) []models.Statistic {
 	}
 
 	// Refresh our disk size stat
-	_, _ = s.DiskSize()
+	if _, err := s.DiskSize(); err != nil {
+		return nil
+	}
 	seriesN := s.engine.SeriesN()
 
 	tags = s.defaultTags.Merge(tags)
@@ -427,6 +431,11 @@ func (s *Shard) SetCompactionsEnabled(enabled bool) {
 
 // DiskSize returns the size on disk of this shard
 func (s *Shard) DiskSize() (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.engine == nil {
+		return 0, ErrEngineClosed
+	}
 	size := s.engine.DiskSize()
 	atomic.StoreInt64(&s.stats.DiskBytes, size)
 	return size, nil
@@ -780,6 +789,14 @@ func (s *Shard) createSeriesIterator(opt query.IteratorOptions) (query.Iterator,
 	return s.engine.SeriesPointIterator(opt)
 }
 
+// IteratorCost returns the estimated cost of constructing and reading an iterator.
+func (s *Shard) IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error) {
+	if err := s.ready(); err != nil {
+		return query.IteratorCost{}, err
+	}
+	return s.engine.IteratorCost(measurement, opt)
+}
+
 // FieldDimensions returns unique sets of fields and dimensions across a list of sources.
 func (s *Shard) FieldDimensions(measurements []string) (fields map[string]influxql.DataType, dimensions map[string]struct{}, err error) {
 	if err := s.ready(); err != nil {
@@ -988,6 +1005,9 @@ func (s *Shard) Import(r io.Reader, basePath string) error {
 func (s *Shard) CreateSnapshot() (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.engine == nil {
+		return "", ErrEngineClosed
+	}
 	return s.engine.CreateSnapshot()
 }
 
@@ -1012,6 +1032,7 @@ type ShardGroup interface {
 	FieldDimensions(measurements []string) (fields map[string]influxql.DataType, dimensions map[string]struct{}, err error)
 	MapType(measurement, field string) influxql.DataType
 	CreateIterator(measurement string, opt query.IteratorOptions) (query.Iterator, error)
+	IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error)
 	ExpandSources(sources influxql.Sources) (influxql.Sources, error)
 }
 
@@ -1108,6 +1129,46 @@ func (a Shards) CreateIterator(measurement string, opt query.IteratorOptions) (q
 		}
 	}
 	return query.Iterators(itrs).Merge(opt)
+}
+
+func (a Shards) IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error) {
+	var costs query.IteratorCost
+	var costerr error
+	var mu sync.RWMutex
+
+	limit := limiter.NewFixed(runtime.GOMAXPROCS(0))
+	var wg sync.WaitGroup
+	for _, sh := range a {
+		limit.Take()
+		wg.Add(1)
+
+		mu.RLock()
+		if costerr != nil {
+			mu.RUnlock()
+			break
+		}
+		mu.RUnlock()
+
+		go func(sh *Shard) {
+			defer limit.Release()
+			defer wg.Done()
+
+			cost, err := sh.IteratorCost(measurement, opt)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				if costerr == nil {
+					costerr = err
+				}
+				return
+			}
+			costs = costs.Combine(cost)
+		}(sh)
+	}
+	wg.Wait()
+	return costs, costerr
 }
 
 func (a Shards) ExpandSources(sources influxql.Sources) (influxql.Sources, error) {

@@ -22,6 +22,8 @@
 - [#8611](https://github.com/influxdata/influxdb/issues/8611): Respect X-Request-Id/Request-Id headers.
 - [#8572](https://github.com/influxdata/influxdb/issues/8668): InfluxDB now uses MIT licensed version of BurntSushi/toml.
 - [#8752](https://github.com/influxdata/influxdb/pull/8752): Use system cursors for measurement, series, and tag key meta queries.
+- [#6563](https://github.com/influxdata/influxdb/issues/6563): Support Ctrl+C to cancel a running query in the Influx CLI. Thanks @emluque!
+- [#8776](https://github.com/influxdata/influxdb/pull/8776): Initial implementation of explain plan.
 
 ### Bugfixes
 
@@ -45,6 +47,7 @@
 - [#8755](https://github.com/influxdata/influxdb/pull/8755): Fix race condition accessing `seriesByID` map.
 - [#8766](https://github.com/influxdata/influxdb/pull/8766): Fix deadlock when calling `SeriesIDsAllOrByExpr`
 - [#8638](https://github.com/influxdata/influxdb/issues/8638): Fix `influx_inspect export` so it skips missing files.
+- [#8770](https://github.com/influxdata/influxdb/pull/8770): Reduce how long it takes to walk the varrefs in an expression.
 
 ## v1.3.4 [unreleased]
 
@@ -195,6 +198,7 @@ The following new configuration options are available.
 - [#8470](https://github.com/influxdata/influxdb/issues/8470): index file fd leak in tsi branch
 - [#8468](https://github.com/influxdata/influxdb/pull/8468): Fix TSI non-contiguous compaction panic.
 - [#8500](https://github.com/influxdata/influxdb/issues/8500): InfluxDB goes unresponsive
+
 ## v1.2.4 [2017-05-08]
 
 ### Bugfixes
