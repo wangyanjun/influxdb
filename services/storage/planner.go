@@ -193,6 +193,7 @@ func newAllMeasurementsPlanner(req *ReadRequest, shards []*tsdb.Shard, log zap.L
 		}
 
 		p.fields = extractFields(fitr)
+		fitr.Close()
 	}
 
 	return p, nil
@@ -200,6 +201,8 @@ func newAllMeasurementsPlanner(req *ReadRequest, shards []*tsdb.Shard, log zap.L
 
 func (p *allMeasurementsPlanner) Close() {
 	p.eof = true
+	p.sitr.Close()
+	p.sitr = nil
 }
 
 // Next returns the next series
