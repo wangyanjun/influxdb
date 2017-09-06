@@ -25,14 +25,18 @@ type floatFilterBatchCursor struct {
 	vb   []float64
 }
 
-func newFloatFilterBatchCursor(cur tsdb.FloatBatchCursor, cond expression) *floatFilterBatchCursor {
+func newFloatFilterBatchCursor(cond expression) *floatFilterBatchCursor {
 	return &floatFilterBatchCursor{
-		FloatBatchCursor: cur,
-		cond:             cond,
-		m:                &singleValue{},
-		t:                make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v:                make([]float64, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]float64, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *floatFilterBatchCursor) reset(cur tsdb.FloatBatchCursor) {
+	c.FloatBatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *floatFilterBatchCursor) Next() (key []int64, value []float64) {
@@ -68,22 +72,28 @@ LOOP:
 
 type floatMultiShardBatchCursor struct {
 	tsdb.FloatBatchCursor
+	filter *floatFilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func newFloatMultiShardBatchCursor(cur tsdb.FloatBatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *floatMultiShardBatchCursor {
+func newFloatMultiShardBatchCursor(cur tsdb.FloatBatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *floatMultiShardBatchCursor {
+	var filter *floatFilterBatchCursor
 	if cond != nil {
-		cur = newFloatFilterBatchCursor(cur, cond)
+		filter = newFloatFilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &floatMultiShardBatchCursor{
 		FloatBatchCursor: cur,
+		filter:           filter,
 		req:              req,
 		shards:           shards,
-		cond:             cond,
+		limit:            rr.limit,
 	}
 
 	return c
@@ -99,6 +109,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -124,8 +142,9 @@ func (c *floatMultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected float cursor")
 		} else {
-			if c.cond != nil {
-				next = newFloatFilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.FloatBatchCursor = next
@@ -207,14 +226,18 @@ type integerFilterBatchCursor struct {
 	vb   []int64
 }
 
-func newIntegerFilterBatchCursor(cur tsdb.IntegerBatchCursor, cond expression) *integerFilterBatchCursor {
+func newIntegerFilterBatchCursor(cond expression) *integerFilterBatchCursor {
 	return &integerFilterBatchCursor{
-		IntegerBatchCursor: cur,
-		cond:               cond,
-		m:                  &singleValue{},
-		t:                  make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v:                  make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *integerFilterBatchCursor) reset(cur tsdb.IntegerBatchCursor) {
+	c.IntegerBatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *integerFilterBatchCursor) Next() (key []int64, value []int64) {
@@ -250,22 +273,28 @@ LOOP:
 
 type integerMultiShardBatchCursor struct {
 	tsdb.IntegerBatchCursor
+	filter *integerFilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func newIntegerMultiShardBatchCursor(cur tsdb.IntegerBatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *integerMultiShardBatchCursor {
+func newIntegerMultiShardBatchCursor(cur tsdb.IntegerBatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *integerMultiShardBatchCursor {
+	var filter *integerFilterBatchCursor
 	if cond != nil {
-		cur = newIntegerFilterBatchCursor(cur, cond)
+		filter = newIntegerFilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &integerMultiShardBatchCursor{
 		IntegerBatchCursor: cur,
+		filter:             filter,
 		req:                req,
 		shards:             shards,
-		cond:               cond,
+		limit:              rr.limit,
 	}
 
 	return c
@@ -281,6 +310,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -306,8 +343,9 @@ func (c *integerMultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected integer cursor")
 		} else {
-			if c.cond != nil {
-				next = newIntegerFilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.IntegerBatchCursor = next
@@ -389,14 +427,18 @@ type unsignedFilterBatchCursor struct {
 	vb   []uint64
 }
 
-func newUnsignedFilterBatchCursor(cur tsdb.UnsignedBatchCursor, cond expression) *unsignedFilterBatchCursor {
+func newUnsignedFilterBatchCursor(cond expression) *unsignedFilterBatchCursor {
 	return &unsignedFilterBatchCursor{
-		UnsignedBatchCursor: cur,
-		cond:                cond,
-		m:                   &singleValue{},
-		t:                   make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v:                   make([]uint64, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]uint64, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *unsignedFilterBatchCursor) reset(cur tsdb.UnsignedBatchCursor) {
+	c.UnsignedBatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *unsignedFilterBatchCursor) Next() (key []int64, value []uint64) {
@@ -432,22 +474,28 @@ LOOP:
 
 type unsignedMultiShardBatchCursor struct {
 	tsdb.UnsignedBatchCursor
+	filter *unsignedFilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func newUnsignedMultiShardBatchCursor(cur tsdb.UnsignedBatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *unsignedMultiShardBatchCursor {
+func newUnsignedMultiShardBatchCursor(cur tsdb.UnsignedBatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *unsignedMultiShardBatchCursor {
+	var filter *unsignedFilterBatchCursor
 	if cond != nil {
-		cur = newUnsignedFilterBatchCursor(cur, cond)
+		filter = newUnsignedFilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &unsignedMultiShardBatchCursor{
 		UnsignedBatchCursor: cur,
+		filter:              filter,
 		req:                 req,
 		shards:              shards,
-		cond:                cond,
+		limit:               rr.limit,
 	}
 
 	return c
@@ -463,6 +511,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -488,8 +544,9 @@ func (c *unsignedMultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected unsigned cursor")
 		} else {
-			if c.cond != nil {
-				next = newUnsignedFilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.UnsignedBatchCursor = next
@@ -571,14 +628,18 @@ type stringFilterBatchCursor struct {
 	vb   []string
 }
 
-func newStringFilterBatchCursor(cur tsdb.StringBatchCursor, cond expression) *stringFilterBatchCursor {
+func newStringFilterBatchCursor(cond expression) *stringFilterBatchCursor {
 	return &stringFilterBatchCursor{
-		StringBatchCursor: cur,
-		cond:              cond,
-		m:                 &singleValue{},
-		t:                 make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v:                 make([]string, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]string, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *stringFilterBatchCursor) reset(cur tsdb.StringBatchCursor) {
+	c.StringBatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *stringFilterBatchCursor) Next() (key []int64, value []string) {
@@ -614,22 +675,28 @@ LOOP:
 
 type stringMultiShardBatchCursor struct {
 	tsdb.StringBatchCursor
+	filter *stringFilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func newStringMultiShardBatchCursor(cur tsdb.StringBatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *stringMultiShardBatchCursor {
+func newStringMultiShardBatchCursor(cur tsdb.StringBatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *stringMultiShardBatchCursor {
+	var filter *stringFilterBatchCursor
 	if cond != nil {
-		cur = newStringFilterBatchCursor(cur, cond)
+		filter = newStringFilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &stringMultiShardBatchCursor{
 		StringBatchCursor: cur,
+		filter:            filter,
 		req:               req,
 		shards:            shards,
-		cond:              cond,
+		limit:             rr.limit,
 	}
 
 	return c
@@ -645,6 +712,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -670,8 +745,9 @@ func (c *stringMultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected string cursor")
 		} else {
-			if c.cond != nil {
-				next = newStringFilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.StringBatchCursor = next
@@ -727,14 +803,18 @@ type booleanFilterBatchCursor struct {
 	vb   []bool
 }
 
-func newBooleanFilterBatchCursor(cur tsdb.BooleanBatchCursor, cond expression) *booleanFilterBatchCursor {
+func newBooleanFilterBatchCursor(cond expression) *booleanFilterBatchCursor {
 	return &booleanFilterBatchCursor{
-		BooleanBatchCursor: cur,
-		cond:               cond,
-		m:                  &singleValue{},
-		t:                  make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v:                  make([]bool, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]bool, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *booleanFilterBatchCursor) reset(cur tsdb.BooleanBatchCursor) {
+	c.BooleanBatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *booleanFilterBatchCursor) Next() (key []int64, value []bool) {
@@ -770,22 +850,28 @@ LOOP:
 
 type booleanMultiShardBatchCursor struct {
 	tsdb.BooleanBatchCursor
+	filter *booleanFilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func newBooleanMultiShardBatchCursor(cur tsdb.BooleanBatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *booleanMultiShardBatchCursor {
+func newBooleanMultiShardBatchCursor(cur tsdb.BooleanBatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *booleanMultiShardBatchCursor {
+	var filter *booleanFilterBatchCursor
 	if cond != nil {
-		cur = newBooleanFilterBatchCursor(cur, cond)
+		filter = newBooleanFilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &booleanMultiShardBatchCursor{
 		BooleanBatchCursor: cur,
+		filter:             filter,
 		req:                req,
 		shards:             shards,
-		cond:               cond,
+		limit:              rr.limit,
 	}
 
 	return c
@@ -801,6 +887,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -826,8 +920,9 @@ func (c *booleanMultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected boolean cursor")
 		} else {
-			if c.cond != nil {
-				next = newBooleanFilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.BooleanBatchCursor = next

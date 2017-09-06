@@ -21,14 +21,18 @@ type {{.name}}FilterBatchCursor struct {
 	vb   []{{.Type}}
 }
 
-func new{{.Name}}FilterBatchCursor(cur tsdb.{{.Name}}BatchCursor, cond expression) *{{.name}}FilterBatchCursor {
+func new{{.Name}}FilterBatchCursor(cond expression) *{{.name}}FilterBatchCursor {
 	return &{{.name}}FilterBatchCursor{
-		{{.Name}}BatchCursor: cur,
-		cond: 	cond,
-		m: 		&singleValue{},
-		t: 		make([]int64, tsdb.DefaultMaxPointsPerBlock),
-		v: 		make([]{{.Type}}, tsdb.DefaultMaxPointsPerBlock),
+		cond: cond,
+		m:    &singleValue{},
+		t:    make([]int64, tsdb.DefaultMaxPointsPerBlock),
+		v:    make([]{{.Type}}, tsdb.DefaultMaxPointsPerBlock),
 	}
+}
+
+func (c *{{.name}}FilterBatchCursor) reset(cur tsdb.{{.Name}}BatchCursor) {
+	c.{{.Name}}BatchCursor = cur
+	c.tb, c.vb = nil, nil
 }
 
 func (c *{{.name}}FilterBatchCursor) Next() (key []int64, value []{{.Type}}) {
@@ -64,22 +68,28 @@ LOOP:
 
 type {{.name}}MultiShardBatchCursor struct {
 	tsdb.{{.Name}}BatchCursor
+	filter *{{.name}}FilterBatchCursor
 	shards []*tsdb.Shard
 	req    *tsdb.CursorRequest
-	cond   expression
 	err    error
+	limit  uint64
+	count  uint64
 }
 
-func new{{.Name}}MultiShardBatchCursor(cur tsdb.{{.Name}}BatchCursor, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *{{.name}}MultiShardBatchCursor {
+func new{{.Name}}MultiShardBatchCursor(cur tsdb.{{.Name}}BatchCursor, rr *readRequest, req *tsdb.CursorRequest, shards []*tsdb.Shard, cond expression) *{{.name}}MultiShardBatchCursor {
+	var filter *{{.name}}FilterBatchCursor
 	if cond != nil {
-		cur = new{{.Name}}FilterBatchCursor(cur, cond)
+		filter = new{{.Name}}FilterBatchCursor(cond)
+		filter.reset(cur)
+		cur = filter
 	}
 
 	c := &{{.name}}MultiShardBatchCursor{
 		{{.Name}}BatchCursor: cur,
-		req:         req,
-		shards:      shards,
-		cond:        cond,
+		filter: filter,
+		req:    req,
+		shards: shards,
+		limit:  rr.limit,
 	}
 
 	return c
@@ -95,6 +105,14 @@ RETRY:
 		if c.nextBatchCursor() {
 			goto RETRY
 		}
+	}
+	c.count += uint64(len(ks))
+	if c.count > c.limit {
+		diff := c.count - c.limit
+		c.count -= diff
+		rem := uint64(len(ks)) - diff
+		ks = ks[:rem]
+		vs = vs[:rem]
 	}
 	return ks, vs
 }
@@ -120,8 +138,9 @@ func (c *{{.name}}MultiShardBatchCursor) nextBatchCursor() bool {
 			c.shards = nil
 			c.err = errors.New("expected {{.name}} cursor")
 		} else {
-			if c.cond != nil {
-				next = new{{.Name}}FilterBatchCursor(next, c.cond)
+			if c.filter != nil {
+				c.filter.reset(next)
+				next = c.filter
 			}
 		}
 		c.{{.Name}}BatchCursor = next

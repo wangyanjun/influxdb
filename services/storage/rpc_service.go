@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 
-	"math"
-
 	"github.com/gogo/protobuf/types"
 	"github.com/influxdata/influxdb/tsdb"
 	"github.com/uber-go/zap"
@@ -54,11 +52,6 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 		return nil
 	}
 
-	lim := req.PointsLimit
-	if lim == 0 {
-		lim = math.MaxUint64
-	}
-
 	b := 0
 	var res ReadResponse
 	res.Frames = make([]ReadResponse_Frame, 0, FrameCount)
@@ -82,7 +75,6 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 		}
 
 		ss := len(res.Frames)
-		pointCount := uint64(0)
 
 		next := rs.Tags()
 		sf := ReadResponse_SeriesFrame{Name: rs.SeriesKey()}
@@ -97,23 +89,11 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 			frame := &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
 			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
 
-			done := false
-
-			for !done {
+			for {
 				ts, vs := cur.Next()
 				if len(ts) == 0 {
 					break
 				}
-
-				rem := lim - pointCount
-
-				if rem < uint64(len(ts)) {
-					ts = ts[:rem]
-					vs = vs[:rem]
-					done = true
-				}
-
-				pointCount += uint64(len(ts))
 
 				frame.Timestamps = append(frame.Timestamps, ts...)
 				frame.Values = append(frame.Values, vs...)
@@ -130,23 +110,11 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 			frame := &ReadResponse_FloatPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]float64, 0, BatchSize)}
 			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_FloatPoints{frame}})
 
-			done := false
-
-			for !done {
+			for {
 				ts, vs := cur.Next()
 				if len(ts) == 0 {
 					break
 				}
-
-				rem := lim - pointCount
-
-				if rem < uint64(len(ts)) {
-					ts = ts[:rem]
-					vs = vs[:rem]
-					done = true
-				}
-
-				pointCount += uint64(len(ts))
 
 				frame.Timestamps = append(frame.Timestamps, ts...)
 				frame.Values = append(frame.Values, vs...)
@@ -159,62 +127,13 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 				}
 			}
 
-		case tsdb.IntegerCursor:
-			frame := &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
-			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
-
-			for {
-				ts, v := cur.Next()
-				if ts == tsdb.EOF {
-					break
-				}
-				pointCount++
-				if pointCount > lim {
-					break
-				}
-
-				frame.Timestamps = append(frame.Timestamps, ts)
-				frame.Values = append(frame.Values, v)
-
-				b++
-				if b >= BatchSize {
-					frame = &ReadResponse_IntegerPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]int64, 0, BatchSize)}
-					res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_IntegerPoints{frame}})
-					b = 0
-				}
-			}
-
-		case tsdb.FloatCursor:
-			frame := &ReadResponse_FloatPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]float64, 0, BatchSize)}
-			res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_FloatPoints{frame}})
-
-			for {
-				ts, v := cur.Next()
-				if ts == tsdb.EOF {
-					break
-				}
-				pointCount++
-				if pointCount > lim {
-					break
-				}
-
-				frame.Timestamps = append(frame.Timestamps, ts)
-				frame.Values = append(frame.Values, v)
-
-				b++
-				if b >= BatchSize {
-					frame = &ReadResponse_FloatPointsFrame{Timestamps: make([]int64, 0, BatchSize), Values: make([]float64, 0, BatchSize)}
-					res.Frames = append(res.Frames, ReadResponse_Frame{&ReadResponse_Frame_FloatPoints{frame}})
-					b = 0
-				}
-			}
 		default:
 
 		}
 
 		cur.Close()
 
-		if pointCount == 0 {
+		if len(res.Frames) == ss+1 {
 			// no points collected, so strip series
 			res.Frames = res.Frames[:ss]
 		}

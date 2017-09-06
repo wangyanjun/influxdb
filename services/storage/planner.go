@@ -17,12 +17,16 @@ var (
 	fieldKey       = []byte("_field")
 )
 
-type ResultSet struct {
-	req        *ReadRequest
-	p          planner
+type readRequest struct {
 	start, end int64
 	asc        bool
+	limit      uint64
+	aggregate  *Aggregate
+}
 
+type ResultSet struct {
+	req readRequest
+	p   planner
 	row plannerRow
 }
 
@@ -41,9 +45,9 @@ func (r *ResultSet) Next() bool {
 }
 
 func (r *ResultSet) Cursor() tsdb.Cursor {
-	cur := newMultiShardBatchCursor(r.row, r.asc, r.start, r.end)
-	if r.req.Aggregate != nil {
-		cur = newAggregateBatchCursor(r.req.Aggregate, cur)
+	cur := newMultiShardBatchCursor(r.row, &r.req)
+	if r.req.aggregate != nil {
+		cur = newAggregateBatchCursor(r.req.aggregate, cur)
 	}
 	return cur
 }
@@ -77,22 +81,6 @@ type plannerRow struct {
 	tags                    models.Tags
 	shards                  []*tsdb.Shard
 	valueCond               influxql.Expr
-}
-
-type allMeasurementsPlanner struct {
-	shards          []*tsdb.Shard
-	sitr            query.FloatIterator
-	fields          []string
-	nf              []string
-	m               string
-	key             string
-	f               string
-	err             error
-	eof             bool
-	tags            models.Tags
-	filterset       mapValuer
-	cond            influxql.Expr
-	measurementCond influxql.Expr
 }
 
 type mapValuer map[string]string
@@ -131,6 +119,22 @@ func extractFields(itr query.FloatIterator) []string {
 	}
 
 	return fields
+}
+
+type allMeasurementsPlanner struct {
+	shards          []*tsdb.Shard
+	sitr            query.FloatIterator
+	fields          []string
+	nf              []string
+	m               string
+	key             string
+	f               string
+	err             error
+	eof             bool
+	tags            models.Tags
+	filterset       mapValuer
+	cond            influxql.Expr
+	measurementCond influxql.Expr
 }
 
 func newAllMeasurementsPlanner(req *ReadRequest, shards []*tsdb.Shard, log zap.Logger) (*allMeasurementsPlanner, error) {

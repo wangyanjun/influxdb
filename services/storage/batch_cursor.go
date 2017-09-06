@@ -61,14 +61,14 @@ func newCountBatchCursor(cur tsdb.Cursor) tsdb.Cursor {
 	}
 }
 
-func newMultiShardBatchCursor(row plannerRow, asc bool, start, end int64) tsdb.Cursor {
+func newMultiShardBatchCursor(row plannerRow, rr *readRequest) tsdb.Cursor {
 	req := &tsdb.CursorRequest{
 		Measurement: row.measurement,
 		Series:      row.key,
 		Field:       row.field,
-		Ascending:   asc,
-		StartTime:   start,
-		EndTime:     end,
+		Ascending:   rr.asc,
+		StartTime:   rr.start,
+		EndTime:     rr.end,
 	}
 
 	var cond expression
@@ -85,19 +85,19 @@ func newMultiShardBatchCursor(row plannerRow, asc bool, start, end int64) tsdb.C
 
 	switch c := cur.(type) {
 	case tsdb.IntegerBatchCursor:
-		return newIntegerMultiShardBatchCursor(c, req, row.shards, cond)
+		return newIntegerMultiShardBatchCursor(c, rr, req, row.shards, cond)
 
 	case tsdb.FloatBatchCursor:
-		return newFloatMultiShardBatchCursor(c, req, row.shards, cond)
+		return newFloatMultiShardBatchCursor(c, rr, req, row.shards, cond)
 
 	case tsdb.UnsignedBatchCursor:
-		return newUnsignedMultiShardBatchCursor(c, req, row.shards, cond)
+		return newUnsignedMultiShardBatchCursor(c, rr, req, row.shards, cond)
 
 	case tsdb.StringBatchCursor:
-		return newStringMultiShardBatchCursor(c, req, row.shards, cond)
+		return newStringMultiShardBatchCursor(c, rr, req, row.shards, cond)
 
 	case tsdb.BooleanBatchCursor:
-		return newBooleanMultiShardBatchCursor(c, req, row.shards, cond)
+		return newBooleanMultiShardBatchCursor(c, rr, req, row.shards, cond)
 
 	case nil:
 		return nil

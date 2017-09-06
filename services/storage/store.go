@@ -83,5 +83,14 @@ func (s *Store) Read(req *ReadRequest) (*ResultSet, error) {
 		return nil, err
 	}
 
-	return &ResultSet{req: req, p: qp, start: start, end: end, asc: !req.Descending}, nil
+	return &ResultSet{
+		req: readRequest{
+			start:     start,
+			end:       end,
+			asc:       !req.Descending,
+			limit:     req.PointsLimit,
+			aggregate: req.Aggregate,
+		},
+		p: qp,
+	}, nil
 }
