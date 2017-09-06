@@ -1660,3 +1660,56 @@ func BenchmarkIndirectIndex_UnmarshalBinary(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkIndirectIndex_Entries(b *testing.B) {
+	index := tsm1.NewIndexWriter()
+	// add 1000 keys and 1000 blocks per key
+	for i := 0; i < 1000; i++ {
+		for j := 0; j < 1000; j++ {
+			index.Add([]byte(fmt.Sprintf("cpu-%d", i)), tsm1.BlockFloat64, int64(i*j*2), int64(i*j*2+1), 10, 100)
+		}
+	}
+
+	bytes, err := index.MarshalBinary()
+	if err != nil {
+		b.Fatalf("unexpected error marshaling index: %v", err)
+	}
+
+	indirect := tsm1.NewIndirectIndex()
+	if err = indirect.UnmarshalBinary(bytes); err != nil {
+		b.Fatalf("unexpected error unmarshaling index: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		indirect.Entries([]byte("cpu-1"))
+	}
+}
+
+func BenchmarkIndirectIndex_ReadEntries(b *testing.B) {
+	index := tsm1.NewIndexWriter()
+	// add 1000 keys and 1000 blocks per key
+	for i := 0; i < 1000; i++ {
+		for j := 0; j < 1000; j++ {
+			index.Add([]byte(fmt.Sprintf("cpu-%d", i)), tsm1.BlockFloat64, int64(i*j*2), int64(i*j*2+1), 10, 100)
+		}
+	}
+
+	bytes, err := index.MarshalBinary()
+	if err != nil {
+		b.Fatalf("unexpected error marshaling index: %v", err)
+	}
+
+	var cache, entries []tsm1.IndexEntry
+	indirect := tsm1.NewIndirectIndex()
+	if err = indirect.UnmarshalBinary(bytes); err != nil {
+		b.Fatalf("unexpected error unmarshaling index: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		entries = indirect.ReadEntries([]byte("cpu-1"), &cache)
+	}
+
+	b.Log(entries[0])
+}
