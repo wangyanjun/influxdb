@@ -8,7 +8,6 @@ import (
 
 	"github.com/influxdata/influxdb/cmd"
 	"github.com/influxdata/influxdb/cmd/store/help"
-	"github.com/influxdata/influxdb/cmd/store/iter"
 	"github.com/influxdata/influxdb/cmd/store/query"
 	_ "github.com/influxdata/influxdb/tsdb/engine"
 	"github.com/uber-go/zap"
@@ -53,12 +52,6 @@ func (m *Main) Run(args ...string) error {
 	case "", "help":
 		if err := help.NewCommand().Run(args...); err != nil {
 			return fmt.Errorf("help: %s", err)
-		}
-	case "iter":
-		name := iter.NewCommand()
-		name.Logger = m.Logger
-		if err := name.Run(args...); err != nil {
-			return fmt.Errorf("cursor: %s", err)
 		}
 	case "query":
 		name := query.NewCommand()

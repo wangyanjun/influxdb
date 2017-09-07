@@ -12,19 +12,9 @@ type Cursor interface {
 	Err() error
 }
 
-type IntegerCursor interface {
-	Cursor
-	Next() (key int64, value int64)
-}
-
 type IntegerBatchCursor interface {
 	Cursor
 	Next() (keys []int64, values []int64)
-}
-
-type FloatCursor interface {
-	Cursor
-	Next() (key int64, value float64)
 }
 
 type FloatBatchCursor interface {
@@ -32,29 +22,14 @@ type FloatBatchCursor interface {
 	Next() (keys []int64, values []float64)
 }
 
-type UnsignedCursor interface {
-	Cursor
-	Next() (key int64, value uint64)
-}
-
 type UnsignedBatchCursor interface {
 	Cursor
 	Next() (keys []int64, values []uint64)
 }
 
-type StringCursor interface {
-	Cursor
-	Next() (key int64, value string)
-}
-
 type StringBatchCursor interface {
 	Cursor
 	Next() (keys []int64, values []string)
-}
-
-type BooleanCursor interface {
-	Cursor
-	Next() (key int64, value bool)
 }
 
 type BooleanBatchCursor interface {

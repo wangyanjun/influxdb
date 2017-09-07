@@ -31,9 +31,8 @@ Usage: store [[command] [arguments]]
 
 The commands are:
 
-    query                queries data.
-    iter                 iterates over local data.
-    help                 display this help message
+    query        queries data.
+    help         display this help message
 
 "help" is the default command.
 

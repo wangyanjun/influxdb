@@ -6,6 +6,14 @@ import (
 	"github.com/influxdata/influxdb/tsdb"
 )
 
+type singleValue struct {
+	v interface{}
+}
+
+func (v *singleValue) Value(key string) (interface{}, bool) {
+	return v.v, true
+}
+
 func newAggregateBatchCursor(agg *Aggregate, cursor tsdb.Cursor) tsdb.Cursor {
 	if cursor == nil {
 		return nil

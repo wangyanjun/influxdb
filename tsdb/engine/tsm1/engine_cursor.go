@@ -37,7 +37,6 @@ func (e *Engine) CreateCursor(r *tsdb.CursorRequest) (tsdb.Cursor, error) {
 		return newFloatRangeBatchCursor(r.Series, t, r.Ascending, e.buildFloatBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.Integer:
-		//return newIntegerRangeCursor(r.Series, t, r.Ascending, e.buildIntegerCursor(r.Measurement, r.Series, r.Field, opt)), nil
 		return newIntegerRangeBatchCursor(r.Series, t, r.Ascending, e.buildIntegerBatchCursor(r.Measurement, r.Series, r.Field, opt)), nil
 
 	case influxql.Unsigned:

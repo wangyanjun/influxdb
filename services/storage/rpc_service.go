@@ -7,11 +7,11 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/influxdata/influxdb/tsdb"
 	"github.com/uber-go/zap"
+	"math"
 )
 
 //go:generate protoc -I$GOPATH/src -I. --plugin=protoc-gen-yarpc=$GOPATH/bin/protoc-gen-yarpc --yarpc_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. --gogofaster_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. storage.proto predicate.proto
-//go:generate tmpl -data=@cursor.gen.go.tmpldata cursor.gen.go.tmpl
-//go:generate tmpl -data=@cursor.gen.go.tmpldata batch_cursor.gen.go.tmpl
+//go:generate tmpl -data=@batch_cursor.gen.go.tmpldata batch_cursor.gen.go.tmpl
 
 type rpcService struct {
 	Store *Store
@@ -40,6 +40,10 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 		zap.Int64("end", req.TimestampRange.End),
 		zap.Bool("desc", req.Descending),
 	)
+
+	if req.PointsLimit == 0 {
+		req.PointsLimit = math.MaxUint64
+	}
 
 	rs, err := r.Store.Read(req)
 	if err != nil {
