@@ -2,12 +2,11 @@ package storage
 
 import (
 	"context"
-	"encoding/binary"
+	"math"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/influxdata/influxdb/tsdb"
 	"github.com/uber-go/zap"
-	"math"
 )
 
 //go:generate protoc -I$GOPATH/src -I. --plugin=protoc-gen-yarpc=$GOPATH/bin/protoc-gen-yarpc --yarpc_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. --gogofaster_out=Mgoogle/protobuf/empty.proto=github.com/gogo/protobuf/types:. storage.proto predicate.proto
@@ -148,38 +147,4 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 	}
 
 	return nil
-}
-
-type integerPoints struct {
-	c   uint32
-	buf []byte
-	d   []byte
-}
-
-func newIntegerPoints(sz int) *integerPoints {
-	i := &integerPoints{buf: make([]byte, sz*16+4)}
-	i.Reset()
-	return i
-}
-
-func (i *integerPoints) Write(t, v int64) uint32 {
-	binary.BigEndian.PutUint64(i.d, uint64(t))
-	binary.BigEndian.PutUint64(i.d[8:], uint64(v))
-	i.d = i.d[16:]
-	i.c++
-	return i.c
-}
-
-func (i *integerPoints) Buf() []byte {
-	if i.c == 0 {
-		return nil
-	}
-
-	binary.BigEndian.PutUint32(i.buf[:4], i.c)
-	return i.buf[:i.c*16+4]
-}
-
-func (i *integerPoints) Reset() {
-	i.c = 0
-	i.d = i.buf[4:]
 }

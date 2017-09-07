@@ -78,7 +78,7 @@ func (s *Store) Read(req *ReadRequest) (*ResultSet, error) {
 		}
 	}
 
-	qp, err := newAllMeasurementsPlanner(req, s.TSDBStore.Shards(shardIDs), s.Logger)
+	cur, err := newIndexSeriesCursor(req, s.TSDBStore.Shards(shardIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +91,6 @@ func (s *Store) Read(req *ReadRequest) (*ResultSet, error) {
 			limit:     req.PointsLimit,
 			aggregate: req.Aggregate,
 		},
-		p: qp,
+		cur: cur,
 	}, nil
 }

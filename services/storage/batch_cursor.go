@@ -69,7 +69,7 @@ func newCountBatchCursor(cur tsdb.Cursor) tsdb.Cursor {
 	}
 }
 
-func newMultiShardBatchCursor(row plannerRow, rr *readRequest) tsdb.Cursor {
+func newMultiShardBatchCursor(row seriesRow, rr *readRequest) tsdb.Cursor {
 	req := &tsdb.CursorRequest{
 		Measurement: row.measurement,
 		Series:      row.key,

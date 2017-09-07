@@ -21,7 +21,7 @@ func TestPlannerCondition(t *testing.T) {
 		t.Fatal("ParseExpr", err)
 	}
 
-	p := &allMeasurementsPlanner{
+	p := &indexSeriesCursor{
 		sitr:            sitr,
 		fields:          []string{"user", "system", "val"},
 		cond:            cond,
