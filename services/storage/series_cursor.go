@@ -3,6 +3,9 @@ package storage
 import (
 	"errors"
 
+	"bytes"
+	"sort"
+
 	"github.com/influxdata/influxdb/influxql"
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/query"
@@ -89,11 +92,6 @@ func newIndexSeriesCursor(req *ReadRequest, shards []*tsdb.Shard) (*indexSeriesC
 		// TODO(sgc): need to rethink how we enumerate series across shards; dedupe is inefficient
 		itr = query.NewDedupeIterator(itr)
 
-		if req.SeriesLimit > 0 || req.SeriesOffset > 0 {
-			opt := query.IteratorOptions{Limit: int(req.SeriesLimit), Offset: int(req.SeriesOffset)}
-			itr = query.NewLimitIterator(itr, opt)
-		}
-
 		p.sitr, err = toFloatIterator(itr, nil)
 		if err != nil {
 			return nil, err
@@ -103,7 +101,6 @@ func newIndexSeriesCursor(req *ReadRequest, shards []*tsdb.Shard) (*indexSeriesC
 	if itr, err := sg.CreateIterator("_fieldKeys", opt); err != nil {
 		return nil, err
 	} else {
-		itr = query.NewDedupeIterator(itr)
 		fitr, err := toFloatIterator(itr, nil)
 		if err != nil {
 			return nil, err
@@ -172,6 +169,7 @@ RETRY:
 	c.tags.Set(fieldKey, []byte(c.row.field))
 
 	if c.cond != nil {
+		// TODO(sgc): lazily evaluate valueCond
 		c.row.valueCond = influxql.Reduce(influxql.CloneExpr(c.cond), c.filterset)
 		if isBooleanLiteral(c.row.valueCond) {
 			// we've reduced the expression to "true"
@@ -186,6 +184,94 @@ RETRY:
 
 func (c *indexSeriesCursor) Err() error {
 	return c.err
+}
+
+type limitSeriesCursor struct {
+	seriesCursor
+	n, o, c uint64
+}
+
+func newLimitSeriesCursor(cur seriesCursor, n, o uint64) *limitSeriesCursor {
+	return &limitSeriesCursor{seriesCursor: cur, o: o, n: n}
+}
+
+func (c *limitSeriesCursor) Next() *seriesRow {
+	if c.o > 0 {
+		for i := uint64(0); i < c.o; i++ {
+			if c.seriesCursor.Next() == nil {
+				break
+			}
+		}
+		c.o = 0
+	}
+
+	if c.c >= c.n {
+		return nil
+	}
+	c.c++
+	return c.seriesCursor.Next()
+}
+
+type groupSeriesCursor struct {
+	seriesCursor
+	rows []seriesRow
+	keys [][]byte
+	f    bool
+}
+
+func newGroupSeriesCursor(cur seriesCursor, keys []string) *groupSeriesCursor {
+	g := &groupSeriesCursor{seriesCursor: cur}
+
+	g.keys = make([][]byte, 0, len(keys))
+	for _, k := range keys {
+		g.keys = append(g.keys, []byte(k))
+	}
+
+	return g
+}
+
+func (c *groupSeriesCursor) Next() *seriesRow {
+	if !c.f {
+		c.sort()
+	}
+
+	if len(c.rows) > 0 {
+		row := &c.rows[0]
+		c.rows = c.rows[1:]
+		return row
+	}
+
+	return nil
+}
+
+func (c *groupSeriesCursor) sort() {
+	var rows []seriesRow
+	row := c.seriesCursor.Next()
+	for row != nil {
+		rows = append(rows, *row)
+		row = c.seriesCursor.Next()
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		for _, k := range c.keys {
+			ik := rows[i].tags.Get(k)
+			jk := rows[j].tags.Get(k)
+			cmp := bytes.Compare(ik, jk)
+			if cmp == 0 {
+				continue
+			}
+			return cmp == -1
+		}
+
+		return false
+	})
+
+	c.rows = rows
+
+	// free early
+	c.seriesCursor.Close()
+	c.seriesCursor = nil
+	c.f = true
 }
 
 func isBooleanLiteral(expr influxql.Expr) bool {
@@ -207,7 +293,7 @@ func toFloatIterator(iter query.Iterator, err error) (query.FloatIterator, error
 }
 
 func extractFields(itr query.FloatIterator) []string {
-	var fields []string
+	var a []string
 	for {
 		p, err := itr.Next()
 		if err != nil {
@@ -215,9 +301,19 @@ func extractFields(itr query.FloatIterator) []string {
 		} else if p == nil {
 			break
 		} else if f, ok := p.Aux[0].(string); ok {
-			fields = append(fields, f)
+			a = append(a, f)
 		}
 	}
 
-	return fields
+	sort.Strings(a)
+	i := 1
+	// TODO(sgc): skip whilst a[i] != a[i-1] to avoid unnecessary copying
+	for j := 1; j < len(a); j++ {
+		if a[j] != a[j-1] {
+			a[i] = a[j]
+			i++
+		}
+	}
+
+	return a[:i]
 }

@@ -78,9 +78,18 @@ func (s *Store) Read(req *ReadRequest) (*ResultSet, error) {
 		}
 	}
 
-	cur, err := newIndexSeriesCursor(req, s.TSDBStore.Shards(shardIDs))
+	var cur seriesCursor
+	cur, err = newIndexSeriesCursor(req, s.TSDBStore.Shards(shardIDs))
 	if err != nil {
 		return nil, err
+	}
+
+	if len(req.Grouping) > 0 {
+		cur = newGroupSeriesCursor(cur, req.Grouping)
+	}
+
+	if req.SeriesLimit > 0 || req.SeriesOffset > 0 {
+		cur = newLimitSeriesCursor(cur, req.SeriesLimit, req.SeriesOffset)
 	}
 
 	return &ResultSet{

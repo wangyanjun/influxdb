@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 
+	"strings"
+
 	"github.com/gogo/protobuf/types"
 	"github.com/influxdata/influxdb/tsdb"
 	"github.com/uber-go/zap"
@@ -38,6 +40,7 @@ func (r *rpcService) Read(req *ReadRequest, stream Storage_ReadServer) error {
 		zap.Int64("start", req.TimestampRange.Start),
 		zap.Int64("end", req.TimestampRange.End),
 		zap.Bool("desc", req.Descending),
+		zap.String("grouping", strings.Join(req.Grouping, ",")),
 	)
 
 	if req.PointsLimit == 0 {

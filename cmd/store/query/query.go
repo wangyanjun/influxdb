@@ -45,6 +45,8 @@ type Command struct {
 	silent          bool
 	expr            string
 	agg             string
+	grouping        string
+	keys            []string
 
 	aggType storage.Aggregate_AggregateType
 }
@@ -86,7 +88,8 @@ func (cmd *Command) Run(args ...string) error {
 	fs.BoolVar(&cmd.desc, "desc", false, "Optional: return results in descending order")
 	fs.BoolVar(&cmd.silent, "silent", false, "silence output")
 	fs.StringVar(&cmd.expr, "expr", "", "InfluxQL expression")
-	fs.StringVar(&cmd.agg, "agg", "", "aggregate function")
+	fs.StringVar(&cmd.agg, "agg", "", "aggregate functions")
+	fs.StringVar(&cmd.grouping, "grouping", "", "comma-separated list of tags to specify series order")
 
 	fs.SetOutput(cmd.Stdout)
 	fs.Usage = func() {
@@ -129,6 +132,10 @@ func (cmd *Command) Run(args ...string) error {
 		}
 	}
 
+	if cmd.grouping != "" {
+		cmd.keys = strings.Split(cmd.grouping, ",")
+	}
+
 	if err := cmd.validate(); err != nil {
 		return err
 	}
@@ -163,6 +170,7 @@ func (cmd *Command) query(c storage.StorageClient) error {
 	req.SeriesOffset = cmd.soffset
 	req.PointsLimit = cmd.limit
 	req.Descending = cmd.desc
+	req.Grouping = cmd.keys
 
 	if cmd.aggType != storage.AggregateTypeNone {
 		req.Aggregate = &storage.Aggregate{Type: cmd.aggType}
