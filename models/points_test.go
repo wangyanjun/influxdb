@@ -2148,6 +2148,8 @@ func toFields(fi models.FieldIterator) models.Fields {
 			v, err = fi.FloatValue()
 		case models.Integer:
 			v, err = fi.IntegerValue()
+		case models.Unsigned:
+			v, err = fi.UnsignedValue()
 		case models.String:
 			v = fi.StringValue()
 		case models.Boolean:
@@ -2173,7 +2175,7 @@ m v=42i
 m v="string"
 m v=true
 m v="string\"with\"escapes"
-m v=42i,f=42,g=42.314
+m v=42i,f=42,g=42.314,u=123u
 m a=2i,b=3i,c=true,d="stuff",e=-0.23,f=123.456
 `)
 
