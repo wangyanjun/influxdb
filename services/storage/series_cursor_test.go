@@ -29,9 +29,10 @@ func TestPlannerCondition(t *testing.T) {
 	}
 
 	keys := []string{}
-	for p.Next() {
-		row := p.Read()
+	row := p.Next()
+	for row != nil {
 		keys = append(keys, row.key+" "+row.field)
+		row = p.Next()
 	}
 
 	exp := []string{"cpu,host=host1 user", "cpu,host=host1 system", "mem,host=host1 user", "mem,host=host1 system", "mem,host=host1 val"}
