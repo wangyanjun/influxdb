@@ -47,6 +47,7 @@ message ReadRequest {
   repeated string grouping = 4;
 
   // Aggregate specifies an optional aggregate to apply to the data.
+  // TODO(sgc): switch to slice for multiple aggregates in a single request
   Aggregate aggregate = 9;
 
   Predicate predicate = 5;
