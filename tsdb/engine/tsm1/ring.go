@@ -180,6 +180,9 @@ func (r *ring) applySerial(f func([]byte, *entry) error) error {
 	for _, p := range r.partitions {
 		p.mu.RLock()
 		for k, e := range p.store {
+			if e.count() == 0 {
+				continue
+			}
 			if err := f([]byte(k), e); err != nil {
 				p.mu.RUnlock()
 				return err
@@ -194,6 +197,9 @@ func (r *ring) applySerial(f func([]byte, *entry) error) error {
 type partition struct {
 	mu    sync.RWMutex
 	store map[string]*entry
+
+	// age counts how many times this partition has be reset.
+	age byte
 }
 
 // entry returns the partition's entry for the provided key.
@@ -254,7 +260,10 @@ func (p *partition) remove(key []byte) {
 func (p *partition) keys() [][]byte {
 	p.mu.RLock()
 	keys := make([][]byte, 0, len(p.store))
-	for k := range p.store {
+	for k, v := range p.store {
+		if v.size() == 0 {
+			continue
+		}
 		keys = append(keys, []byte(k))
 	}
 	p.mu.RUnlock()
@@ -266,7 +275,22 @@ func (p *partition) keys() [][]byte {
 func (p *partition) reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for k := range p.store {
-		delete(p.store, k)
+
+	// Periodically just recreate the store with the prior size of the existing
+	// store.  This allows the map to be created in an ideal state vs having it
+	// incrementally get there via adds and deletes.  It also, seems to fix some
+	// memory fragmentation issues on the heap that occur over time as well as a
+	// gradual slow down of all map operations.
+	p.age++
+	if p.age >= 4 {
+		p.store = make(map[string]*entry, len(p.store))
+		p.age = 0
+		return
+	}
+
+	for k, v := range p.store {
+		if v.reset() {
+			delete(p.store, k)
+		}
 	}
 }

@@ -39,6 +39,9 @@ type entry struct {
 	// The type of values stored. Read only so doesn't need to be protected by
 	// mu.
 	vtype int
+
+	// emptyCount counts how many times this entry has been empty when reset.
+	empytCount byte
 }
 
 // newEntryValues returns a new instance of entry with the given values.  If the
@@ -145,6 +148,24 @@ func (e *entry) size() int {
 	sz := e.values.Size()
 	e.mu.RUnlock()
 	return sz
+}
+
+// reset clears the values in this entry and return true if entry has been
+// been empty after 10 resets.
+func (e *entry) reset() bool {
+	e.mu.Lock()
+	if len(e.values) == 0 {
+		e.empytCount++
+		if e.empytCount > 10 {
+			e.mu.Unlock()
+			return true
+		}
+	}
+	e.values = e.values[:0]
+	e.empytCount = 0
+	e.mu.Unlock()
+
+	return false
 }
 
 // Statistics gathered by the Cache.
