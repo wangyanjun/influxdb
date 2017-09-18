@@ -114,6 +114,10 @@ func newIndexSeriesCursor(req *ReadRequest, shards []*tsdb.Shard) (*indexSeriesC
 }
 
 func (c *indexSeriesCursor) Close() {
+	if c.eof {
+		return
+	}
+
 	c.eof = true
 	c.sitr.Close()
 	c.sitr = nil
@@ -270,7 +274,6 @@ func (c *groupSeriesCursor) sort() {
 
 	// free early
 	c.seriesCursor.Close()
-	c.seriesCursor = nil
 	c.f = true
 }
 
