@@ -129,6 +129,14 @@ func (r *ring) keys(sorted bool) [][]byte {
 	return keys
 }
 
+func (r *ring) count() int {
+	var n int
+	for _, p := range r.partitions {
+		n += p.count()
+	}
+	return n
+}
+
 // apply applies the provided function to every entry in the ring under a read
 // lock using a separate goroutine for each partition. The provided function
 // will be called with each key and the corresponding entry. The first error
@@ -191,6 +199,21 @@ func (r *ring) applySerial(f func([]byte, *entry) error) error {
 		p.mu.RUnlock()
 	}
 	return nil
+}
+
+func (r *ring) split(n int) []storer {
+	var keys int
+	storers := make([]storer, n)
+	for i := 0; i < n; i++ {
+		storers[i], _ = newring(len(r.partitions))
+	}
+
+	for i, p := range r.partitions {
+		r := storers[i%n].(*ring)
+		r.partitions[i] = p
+		keys += len(p.store)
+	}
+	return storers
 }
 
 // partition provides safe access to a map of series keys to entries.
@@ -261,7 +284,7 @@ func (p *partition) keys() [][]byte {
 	p.mu.RLock()
 	keys := make([][]byte, 0, len(p.store))
 	for k, v := range p.store {
-		if v.size() == 0 {
+		if v.count() == 0 {
 			continue
 		}
 		keys = append(keys, []byte(k))
@@ -293,4 +316,17 @@ func (p *partition) reset() {
 			delete(p.store, k)
 		}
 	}
+}
+
+func (p *partition) count() int {
+	var n int
+	p.mu.RLock()
+	for _, v := range p.store {
+		if v.count() > 0 {
+			n++
+		}
+	}
+	p.mu.RUnlock()
+	return n
+
 }
